@@ -5402,6 +5402,25 @@ struct_done_call:
     }
 }
 
+/* A cleanup block can replace an earlier return, throw, or runtime error.
+   Keep the original diagnostic unless cleanup itself changes control flow. */
+static exec_result exec_cleanup(cs_vm* vm, cs_env* env, ast* cleanup,
+                                exec_result previous, size_t frame_depth) {
+    char* saved_error = vm->last_error;
+    vm->last_error = NULL;
+    if (vm->frame_count > frame_depth) vm->frame_count = frame_depth;
+    exec_result result = exec_stmt(vm, env, cleanup);
+    if (!result.ok || result.did_return || result.did_break || result.did_continue || result.did_throw) {
+        free(saved_error);
+        cs_value_release(previous.ret);
+        cs_value_release(previous.thrown);
+        return result;
+    }
+    free(vm->last_error);
+    vm->last_error = saved_error;
+    return previous;
+}
+
 static exec_result exec_block(cs_vm* vm, cs_env* env, ast* b) {
     exec_result r;
     r.did_return = 0;
@@ -5414,6 +5433,7 @@ static exec_result exec_block(cs_vm* vm, cs_env* env, ast* b) {
 
     if (!b || b->type != N_BLOCK) return r;
 
+    size_t frame_depth = vm->frame_count;
     size_t defer_cap = 0;
     size_t defer_count = 0;
     ast** defers = NULL;
@@ -5424,13 +5444,15 @@ static exec_result exec_block(cs_vm* vm, cs_env* env, ast* b) {
         ast* stmt = b->as.block.items[i];
         if (stmt && stmt->type == N_DEFER) {
             if (defer_count == defer_cap) {
-                defer_cap = defer_cap ? defer_cap * 2 : 4;
-                defers = (ast**)realloc(defers, sizeof(ast*) * defer_cap);
-            }
-            if (!defers) {
-                vm_set_err(vm, "out of memory", stmt->source_name, stmt->line, stmt->col);
-                base.ok = 0;
-                break;
+                size_t capacity = defer_cap ? defer_cap * 2 : 4;
+                ast** grown = (ast**)realloc(defers, sizeof(ast*) * capacity);
+                if (!grown) {
+                    vm_set_err(vm, "out of memory", stmt->source_name, stmt->line, stmt->col);
+                    base.ok = 0;
+                    break;
+                }
+                defers = grown;
+                defer_cap = capacity;
             }
             defers[defer_count++] = stmt->as.defer_stmt.stmt;
             continue;
@@ -5441,11 +5463,7 @@ static exec_result exec_block(cs_vm* vm, cs_env* env, ast* b) {
     }
 
     for (size_t i = defer_count; i > 0; i--) {
-        exec_result dr = exec_stmt(vm, env, defers[i - 1]);
-        if (!dr.ok || dr.did_return || dr.did_break || dr.did_continue || dr.did_throw) {
-            free(defers);
-            return dr;
-        }
+        base = exec_cleanup(vm, env, defers[i - 1], base, frame_depth);
     }
 
     free(defers);
@@ -6589,42 +6607,26 @@ static exec_result exec_stmt(cs_vm* vm, cs_env* env, ast* s) {
         }
 
         case N_TRY: {
-            size_t base_depth = vm ? vm->frame_count : 0;
-            exec_result tr = exec_stmt(vm, env, s->as.try_stmt.try_b);
-            if (!tr.ok) return tr;
-            exec_result result = tr;
-
-            if (tr.did_throw) {
-                if (vm && vm->frame_count > base_depth) vm->frame_count = base_depth;
+            size_t base_depth = vm->frame_count;
+            exec_result result = exec_stmt(vm, env, s->as.try_stmt.try_b);
+            if (result.ok && result.did_throw) {
+                if (vm->frame_count > base_depth) vm->frame_count = base_depth;
                 cs_env* catchenv = env_new(env);
                 if (!catchenv) {
-                    cs_value_release(tr.thrown);
-                    vm_set_err(vm, "out of memory", s->source_name, s->line, s->col);
-                    tr.ok = 0;
-                    tr.did_throw = 0;
-                    tr.thrown = cs_nil();
-                    return tr;
-                }
-
-                env_set_here(catchenv, s->as.try_stmt.catch_name, tr.thrown);
-                cs_value_release(tr.thrown);
-                tr.thrown = cs_nil();
-                tr.did_throw = 0;
-
-                exec_result cr = exec_stmt(vm, catchenv, s->as.try_stmt.catch_b);
-                env_decref(catchenv);
-                result = cr;
-            }
-
-            if (s->as.try_stmt.finally_b) {
-                exec_result fr = exec_stmt(vm, env, s->as.try_stmt.finally_b);
-                if (!fr.ok || fr.did_return || fr.did_break || fr.did_continue || fr.did_throw) {
-                    cs_value_release(result.ret);
                     cs_value_release(result.thrown);
-                    return fr;
+                    result.thrown = cs_nil();
+                    result.did_throw = 0;
+                    result.ok = 0;
+                    vm_set_err(vm, "out of memory", s->source_name, s->line, s->col);
+                } else {
+                    env_set_here(catchenv, s->as.try_stmt.catch_name, result.thrown);
+                    cs_value_release(result.thrown);
+                    result = exec_stmt(vm, catchenv, s->as.try_stmt.catch_b);
+                    env_decref(catchenv);
                 }
             }
-
+            if (s->as.try_stmt.finally_b)
+                result = exec_cleanup(vm, env, s->as.try_stmt.finally_b, result, base_depth);
             return result;
         }
 

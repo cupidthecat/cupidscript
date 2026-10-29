@@ -94,8 +94,35 @@ static int test_cycle_roots(void) {
     return rc;
 }
 
+static int test_cleanup_errors(void) {
+    int rc = 0;
+    cs_vm* vm = cs_vm_new();
+    if (!vm) return 1;
+    cs_register_native(vm, "store", store_value, NULL);
+    const char* cases[] = {
+        "try { let value = 1 / 0; } catch (e) { store(99); } finally { store(1); }",
+        "try { throw 7; } catch (e) { let value = 1 / 0; } finally { store(2); }",
+        "try { try { let value = 1 / 0; } catch (e) {} finally { store(3); } } catch (e) {} finally { store(4); }",
+        "defer { store(5); } let value = 1 / 0;"
+    };
+    const int expected[] = {1, 2, 4, 5};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        cs_value_release(g_stored); g_stored = cs_nil();
+        rc |= expect_true(cs_vm_run_string(vm, cases[i], "<cleanup errors>") != 0, "runtime error propagates");
+        rc |= expect_true(strstr(cs_vm_last_error(vm), "division by zero") != NULL, "original runtime error retained");
+        rc |= expect_true(g_stored.type == CS_T_INT && g_stored.as.i == expected[i], "cleanup runs after runtime error");
+    }
+    rc |= expect_true(cs_vm_run_string(vm,
+        "try { let value = 1 / 0; } catch (e) {} finally { missing_cleanup(); }",
+        "<cleanup override>") != 0, "cleanup failure propagates");
+    rc |= expect_true(strstr(cs_vm_last_error(vm), "undefined variable") != NULL, "cleanup error replaces prior error");
+    cs_value_release(g_stored); g_stored = cs_nil();
+    cs_vm_free(vm);
+    return rc;
+}
+
 int main(void) {
-    int rc = test_tuple_api() | test_cycle_roots();
+    int rc = test_tuple_api() | test_cycle_roots() | test_cleanup_errors();
 
     cs_vm* vm = cs_vm_new();
     rc |= expect_true(vm != NULL, "cs_vm_new");
