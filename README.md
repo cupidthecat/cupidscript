@@ -557,39 +557,39 @@ $CC $CFLAGS -Isrc "$OBJDIR/main.o" "$BINDIR/libcupidscript.a" -o "$BINDIR/cupids
 
 #### Embedder usage (typical flow):
 
-1. Create a VM:  
+1. Create a VM:
    ```c
    cs_vm* vm = cs_vm_new();
    ```
-2. Register stdlib:  
+2. Register stdlib:
    ```c
    cs_register_stdlib(vm);
    ```
-3. Expose natives:  
+3. Expose natives:
    ```c
    cs_register_native(vm, "my.native", my_fn, NULL);
    ```
-4. Run code from file:  
+4. Run code from file:
    ```c
    cs_vm_run_file(vm, "script.cs");
    ```
-   Or run from a string:  
+   Or run from a string:
    ```c
    cs_vm_run_string(vm, code, "<string>");
    ```
-5. Call a named script function:  
+5. Call a named script function:
    ```c
    cs_call(vm, "function_name", argc, argv, &out);
    ```
-   Or call a function value (callback) you previously stored:  
+   Or call a function value (callback) you previously stored:
    ```c
    cs_call_value(vm, fn_value, argc, argv, &out);
    ```
-6. Retrieve errors:  
+6. Retrieve errors:
    ```c
    const char* err = cs_vm_last_error(vm);
    ```
-7. Strings:  
+7. Strings:
    ```c
    cs_str(vm, "hello"); /* and convert to C with cs_to_cstr(out_val); */
    ```
@@ -663,7 +663,7 @@ cs_vm_set_timeout(vm, 10000);                // 10 second timeout
 int rc = cs_vm_run_file(vm, "user_plugin.cs");
 if (rc != 0) {
     fprintf(stderr, "Plugin error: %s\n", cs_vm_last_error(vm));
-    fprintf(stderr, "Instructions executed: %llu\n", 
+    fprintf(stderr, "Instructions executed: %llu\n",
             (unsigned long long)cs_vm_get_instruction_count(vm));
 }
 ```
@@ -733,7 +733,7 @@ All returned `cs_value` objects must be released with `cs_value_release()`.
 
 - **Value types** (`cs_type`, exposed via `cupidscript.h`):
   - `CS_T_NIL`, `CS_T_BOOL`, `CS_T_INT`, `CS_T_FLOAT`, `CS_T_STR`, `CS_T_LIST`, `CS_T_MAP`, `CS_T_STRBUF`, `CS_T_FUNC`, `CS_T_NATIVE`
-- **Core value wrapper:**  
+- **Core value wrapper:**
   ```c
   cs_value { type; union { int b; int64_t i; double f; void* p; } as; }
   ```
@@ -921,7 +921,7 @@ Methods:
   - **cs_lexer.c/h** and **cs_parser.c/h**: tokenization and parsing into an AST.
   - **cs_vm.c/h**: execution engine with a small call/stack model and a global environment (`cs_env`) with lexical scoping via closures.
 - **cs_stdlib.c**: small host-facing API exposed to CupidScript via `cs_register_native` (includes `print`, `assert`, `load`/`require`, list/map helpers, string/path helpers, and `fmt`).
-- **Strings are ref-counted:** The code uses a dedicated `cs_string` type (see `cs_value.h`).  
+- **Strings are ref-counted:** The code uses a dedicated `cs_string` type (see `cs_value.h`).
   *Note:* Ensure you consistently use the public API for string lifetimes.
 
 ---
@@ -1032,7 +1032,7 @@ On the C side you typically:
 ## Notes
 
 - This project is a small, embeddable scripting VM with a tiny standard library and some example natives.
-- **License:** This project is licensed under the GNU General Public License version 3 (GPLv3).  
+- **License:** This project is licensed under the GNU General Public License version 3 (GPLv3).
   See the `COPYING` file or https://www.gnu.org/licenses/gpl-3.0.html for details.
 - For a quick reference or usage guidance, check the header API in `src/cupidscript.h` and the implementation in the `src` directory.
 
@@ -1040,7 +1040,7 @@ On the C side you typically:
 
 ## License
 
-- **GPLv3.** This repository is licensed under the GNU General Public License version 3.  
+- **GPLv3.** This repository is licensed under the GNU General Public License version 3.
   See [`LICENSE`](LICENSE) or visit [https://www.gnu.org/licenses/gpl-3.0.html](https://www.gnu.org/licenses/gpl-3.0.html) for details.
 
 ---
@@ -1095,3 +1095,5 @@ See the [Data-Formats](https://github.com/frankischilling/cupidscript/wiki/Data-
 ## TODO
 
 - [ ] Add cupidfm lib support
+
+List and map literals accept a trailing comma, including nested literals. `str_repeat` returns an empty string for an empty input or a nonpositive count, and reports an error if the result size overflows.

@@ -9141,20 +9141,26 @@ static int nf_str_repeat(cs_vm* vm, void* ud, int argc, const cs_value* argv, cs
         return 0;
     }
     
-    size_t s_len = strlen(s);
+    const cs_string* string = (const cs_string*)argv[0].as.p;
+    size_t s_len = string ? string->len : 0;
+    if (!s_len) {
+        *out = cs_str(vm, "");
+        return 0;
+    }
+    if ((uint64_t)count > (SIZE_MAX - 1) / s_len) {
+        cs_error(vm, "str_repeat() result is too large");
+        return 1;
+    }
     size_t total_len = s_len * (size_t)count;
     char* result = (char*)malloc(total_len + 1);
     if (!result) { cs_error(vm, "out of memory"); return 1; }
-    
     char* p = result;
     for (int64_t i = 0; i < count; i++) {
         memcpy(p, s, s_len);
         p += s_len;
     }
     *p = '\0';
-    
-    *out = cs_str(vm, result);
-    free(result);
+    *out = cs_str_take(vm, result, (uint64_t)total_len);
     return 0;
 }
 

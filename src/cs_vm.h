@@ -9,6 +9,9 @@
 typedef struct cs_env {
     int ref;
     struct cs_env* parent;
+    cs_vm* owner;
+    struct cs_env* owner_next;
+    struct cs_env* owner_prev;
     char** keys;
     cs_value* vals;
     unsigned char* is_const;
@@ -46,7 +49,8 @@ typedef struct cs_module {
 
 typedef enum {
     CS_TRACK_LIST = 1,
-    CS_TRACK_MAP = 2
+    CS_TRACK_MAP = 2,
+    CS_TRACK_TUPLE = 3
 } cs_track_type;
 
 typedef struct cs_track_node {
@@ -75,6 +79,7 @@ typedef struct cs_timer {
 
 struct cs_vm {
     cs_env* globals;
+    cs_env* environments;
     char* last_error;
 
     int pending_throw;
@@ -179,5 +184,8 @@ void cs_vm_unlock(cs_vm* vm);
 int cs_scheduler_run_once(cs_vm* vm);
 int cs_scheduler_run_due_timers(cs_vm* vm);
 #endif
+
+// Store a newly owned value, releasing the caller's reference on either result.
+int cs_map_set_owned(cs_value map, const char* key, cs_value value);
 
 #endif
