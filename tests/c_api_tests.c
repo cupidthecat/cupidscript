@@ -28,8 +28,74 @@ static int expect_true(int cond, const char* msg) {
     return 0;
 }
 
-int main(void) {
+static int test_tuple_api(void) {
     int rc = 0;
+    cs_vm* vm = cs_vm_new();
+    if (!vm) return 1;
+    cs_value tuple = cs_tuple(vm, 2);
+    cs_value text = cs_str(vm, "owned field");
+    rc |= expect_true(tuple.type == CS_T_TUPLE && cs_tuple_len(tuple) == 2, "tuple allocation");
+    rc |= expect_true(cs_tuple_set_named(tuple, "name", text) == 0, "named tuple setter");
+    cs_value_release(text);
+    rc |= expect_true(cs_tuple_set_named(tuple, "count", cs_int(2)) == 0, "second named field");
+    rc |= expect_true(cs_tuple_set_named(tuple, "count", cs_int(3)) == 0, "replace named field");
+    rc |= expect_true(cs_tuple_set_named(tuple, "extra", cs_nil()) != 0, "tuple capacity checked");
+    rc |= expect_true(cs_tuple_set_positional(tuple, 2, cs_int(0)) != 0, "tuple bounds checked");
+    rc |= expect_true(cs_tuple_get_positional(tuple, 2).type == CS_T_NIL, "tuple read bounds");
+    rc |= expect_true(cs_tuple_get_named(tuple, "missing").type == CS_T_NIL, "missing named field");
+    rc |= expect_true(strcmp(cs_tuple_field_name(tuple, 0), "name") == 0, "tuple field name");
+    rc |= expect_true(cs_tuple_field_name(tuple, 2) == NULL, "field name bounds");
+    cs_value count = cs_tuple_get_named(tuple, "count");
+    rc |= expect_true(count.type == CS_T_INT && count.as.i == 3, "named getter");
+    cs_value_release(count);
+    cs_value retained = cs_value_copy(tuple);
+    cs_value_release(tuple);
+    cs_value field = cs_tuple_get_positional(retained, 0);
+    cs_value_release(retained);
+    rc |= expect_true(field.type == CS_T_STR && strcmp(cs_to_cstr(field), "owned field") == 0,
+                      "tuple getters retain fields");
+    cs_value_release(field);
+
+    // Retained containers must detach from the VM before it is destroyed.
+    cs_value external = cs_tuple(vm, 1);
+    cs_value list = cs_list(vm);
+    cs_value map = cs_map(vm);
+    cs_list_push(list, map);
+    cs_tuple_set_positional(external, 0, list);
+    cs_value_release(list);
+    cs_value_release(map);
+    cs_vm_free(vm);
+    cs_value_release(external);
+    return rc;
+}
+
+static int test_cycle_roots(void) {
+    int rc = 0;
+    cs_vm* vm = cs_vm_new();
+    if (!vm) return 1;
+    cs_vm_set_gc_threshold(vm, 1);
+    cs_vm_set_gc_alloc_trigger(vm, 1);
+    cs_value list = cs_list(vm);
+    cs_value map = cs_map(vm);
+    cs_value tuple = cs_tuple(vm, 1);
+    cs_list_push(list, map);
+    cs_map_set_value(map, tuple, list);
+    cs_tuple_set_positional(tuple, 0, map);
+    cs_value_release(map);
+    cs_value_release(tuple);
+    rc |= expect_true(cs_vm_collect_cycles(vm) == 0, "host root keeps container graph alive");
+    cs_value child = cs_list_get(list, 0);
+    rc |= expect_true(cs_map_len(child) == 1, "reachable map retained through cycle collection");
+    cs_value_release(child);
+    cs_value_release(list);
+    rc |= expect_true(cs_vm_collect_cycles(vm) == 3, "collect list/map-key/tuple cycle");
+    rc |= expect_true(vm->tracked_count == 0, "collected containers untracked");
+    cs_vm_free(vm);
+    return rc;
+}
+
+int main(void) {
+    int rc = test_tuple_api() | test_cycle_roots();
 
     cs_vm* vm = cs_vm_new();
     rc |= expect_true(vm != NULL, "cs_vm_new");
