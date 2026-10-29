@@ -45,9 +45,11 @@ ifneq (,$(filter -ftest-coverage,$(CFLAGS)))
 	COVERAGE_LDFLAGS += -ftest-coverage
 endif
 
-.PHONY: all clean dirs test
+.PHONY: all lib clean dirs test
 
 all: dirs $(LIB) $(BIN) $(API_TEST_BIN)
+
+lib: $(LIB)
 
 # Auto-generated header dependencies.
 # Note: These .d files don't exist on a fresh tree; the rules below will bootstrap them.
@@ -64,19 +66,19 @@ $(OBJDIR)/%.d: $(SRCDIR)/%.c | dirs
 $(OBJDIR)/c_api_tests.d: tests/c_api_tests.c | dirs
 	@$(CC) $(CFLAGS) -MM -MP -MF $@ -MT $(OBJDIR)/c_api_tests.o -Isrc $<
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.c
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | dirs
 	$(CC) $(CFLAGS) $(DEPFLAGS) -Isrc -c $< -o $@
 
-$(LIB): $(CS_OBJS)
+$(LIB): $(CS_OBJS) | dirs
 	$(AR) $(ARFLAGS) $@ $^
 
-$(BIN): $(CS_OBJS) $(CLI_OBJS)
+$(BIN): $(CS_OBJS) $(CLI_OBJS) | dirs
 	$(CC) $(CFLAGS) -Isrc $^ -o $@ $(COVERAGE_LDFLAGS) $(LDFLAGS) -lz -lm
 
-$(OBJDIR)/c_api_tests.o: tests/c_api_tests.c
+$(OBJDIR)/c_api_tests.o: tests/c_api_tests.c | dirs
 	$(CC) $(CFLAGS) $(DEPFLAGS) -Isrc -c $< -o $@
 
-$(API_TEST_BIN): $(CS_OBJS) $(API_TEST_OBJS)
+$(API_TEST_BIN): $(CS_OBJS) $(API_TEST_OBJS) | dirs
 	$(CC) $(CFLAGS) -Isrc $^ -o $@ $(COVERAGE_LDFLAGS) $(LDFLAGS) -lz -lm
 
 clean:

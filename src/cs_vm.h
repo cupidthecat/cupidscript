@@ -9,6 +9,9 @@
 typedef struct cs_env {
     int ref;
     struct cs_env* parent;
+    cs_vm* owner;
+    struct cs_env* owner_next;
+    struct cs_env* owner_prev;
     char** keys;
     cs_value* vals;
     unsigned char* is_const;
@@ -75,6 +78,7 @@ typedef struct cs_timer {
 
 struct cs_vm {
     cs_env* globals;
+    cs_env* environments;
     char* last_error;
 
     int pending_throw;

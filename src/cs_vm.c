@@ -330,6 +330,8 @@ cs_vm* cs_vm_new(void) {
         free(vm);
         return NULL;
     }
+    vm->globals->owner = vm;
+    vm->environments = vm->globals;
     vm->last_error = NULL;
     vm->pending_throw = 0;
     vm->pending_thrown = cs_nil();
@@ -799,6 +801,11 @@ static void env_decref(cs_env* e) {
     if (!e) return;
     if (--e->ref > 0) return;
     cs_env* parent = e->parent;
+    if (e->owner) {
+        if (e->owner_prev) e->owner_prev->owner_next = e->owner_next;
+        else e->owner->environments = e->owner_next;
+        if (e->owner_next) e->owner_next->owner_prev = e->owner_prev;
+    }
     for (size_t i = 0; i < e->count; i++) {
         free(e->keys[i]);
         cs_value_release(e->vals[i]);
@@ -820,6 +827,17 @@ static cs_env* env_new(cs_env* parent) {
     e->keys = (char**)calloc(e->cap, sizeof(char*));
     e->vals = (cs_value*)calloc(e->cap, sizeof(cs_value));
     e->is_const = (unsigned char*)calloc(e->cap, sizeof(unsigned char));
+    if (!e->keys || !e->vals || !e->is_const) {
+        free(e->keys); free(e->vals); free(e->is_const); free(e);
+        env_decref(parent);
+        return NULL;
+    }
+    e->owner = parent ? parent->owner : NULL;
+    if (e->owner) {
+        e->owner_next = e->owner->environments;
+        if (e->owner_next) e->owner_next->owner_prev = e;
+        e->owner->environments = e;
+    }
     return e;
 }
 
@@ -6539,6 +6557,9 @@ static exec_result exec_stmt(cs_vm* vm, cs_env* env, ast* s) {
 
 void cs_vm_free(cs_vm* vm) {
     if (!vm) return;
+#if defined(__linux__)
+    cs_event_loop_stop(vm);
+#endif
     while (vm->task_head) {
         cs_task* t = vm->task_head;
         vm->task_head = t->next;
@@ -6569,6 +6590,19 @@ void cs_vm_free(cs_vm* vm) {
     pthread_mutex_destroy(&vm->loop_mutex);
 #endif
 
+    /* Pin every environment before breaking closure cycles. This preserves
+       parent links while values release functions that refer back to scopes. */
+    for (cs_env* e = vm->environments; e; e = e->owner_next) env_incref(e);
+    for (cs_env* e = vm->environments; e; e = e->owner_next) {
+        size_t count = e->count;
+        e->count = 0;
+        for (size_t i = 0; i < count; i++) {
+            free(e->keys[i]);
+            cs_value_release(e->vals[i]);
+        }
+        free(e->keys); free(e->vals); free(e->is_const);
+        e->keys = NULL; e->vals = NULL; e->is_const = NULL; e->cap = 0;
+    }
     env_decref(vm->globals);
     free(vm->last_error);
     cs_value_release(vm->pending_thrown);
@@ -6586,6 +6620,15 @@ void cs_vm_free(cs_vm* vm) {
         cs_value_release(vm->modules[i].exports);
     }
     free(vm->modules);
+    cs_env* environments = vm->environments;
+    vm->environments = NULL;
+    while (environments) {
+        cs_env* next = environments->owner_next;
+        environments->owner = NULL;
+        environments->owner_next = environments->owner_prev = NULL;
+        env_decref(environments);
+        environments = next;
+    }
     while (vm->tracked) {
         cs_track_node* n = vm->tracked;
         vm->tracked = n->next;

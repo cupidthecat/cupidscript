@@ -2499,7 +2499,7 @@ static ast* parse_stmt(parser* P) {
                     lexer saveL = P->L;
                     token saveT = P->tok;
 
-                    (void)parse_lvalue(P);
+                    ast_free(parse_lvalue(P));
                     token_type assign_op = P->tok.type;
                     int is_assign = (assign_op == TK_ASSIGN || assign_op == TK_PLUSEQ || assign_op == TK_MINUSEQ ||
                                      assign_op == TK_STAREQ || assign_op == TK_SLASHEQ);
@@ -2543,7 +2543,7 @@ static ast* parse_stmt(parser* P) {
                     lexer saveL = P->L;
                     token saveT = P->tok;
 
-                    (void)parse_lvalue(P);
+                    ast_free(parse_lvalue(P));
                     token_type assign_op = P->tok.type;
                     int is_assign = (assign_op == TK_ASSIGN || assign_op == TK_PLUSEQ || assign_op == TK_MINUSEQ ||
                                      assign_op == TK_STAREQ || assign_op == TK_SLASHEQ);
@@ -2713,7 +2713,7 @@ static ast* parse_stmt(parser* P) {
         lexer saveL = P->L;
         token saveT = P->tok;
 
-        (void)parse_lvalue(P);
+        ast_free(parse_lvalue(P));
         token_type assign_op = P->tok.type;
         int is_assign = (assign_op == TK_ASSIGN || assign_op == TK_PLUSEQ || assign_op == TK_MINUSEQ ||
                          assign_op == TK_STAREQ || assign_op == TK_SLASHEQ);
